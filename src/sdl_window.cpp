@@ -27,6 +27,7 @@
 #include "input/controller.h"
 #include "input/input_handler.h"
 #include "input/input_mouse.h"
+#include "medievil/autopilot.h"
 #include "sdl_window.h"
 #include "video_core/renderdoc.h"
 
@@ -344,6 +345,7 @@ void WindowSDL::InitTimers() {
         SDL_AddTimer(4, &PollController, controllers[i]);
     }
     SDL_AddTimer(33, Input::MousePolling, (void*)controllers[0]);
+    MediEvil::StartAutopilot(&controllers);
 }
 
 void WindowSDL::RequestKeyboard() {
