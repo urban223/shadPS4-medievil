@@ -3,6 +3,7 @@
 
 #include <limits>
 #include <xxhash.h>
+#include "medievil/frame_trace.h"
 
 #include "common/assert.h"
 #include "common/debug.h"
@@ -511,6 +512,7 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
 }
 
 ImageId TextureCache::ExpandImage(const ImageInfo& info, ImageId image_id) {
+    MediEvil::FrameTrace::Inc(MediEvil::FrameTrace::ImagesExpanded);
     {
         // MediEvil port diagnostics: which images keep getting re-created.
         static u32 expand_logs = 0;
@@ -896,6 +898,7 @@ vk::Sampler TextureCache::GetSampler(const AmdGpu::Sampler& sharp,
 
 void TextureCache::RegisterImage(ImageId image_id) {
     ++registry_generation;
+    MediEvil::FrameTrace::Inc(MediEvil::FrameTrace::ImagesCreated);
     Image& image = slot_images[image_id];
     ASSERT_MSG(False(image.flags & ImageFlagBits::Registered),
                "Trying to register an already registered image");
@@ -915,6 +918,7 @@ void TextureCache::RegisterImage(ImageId image_id) {
 
 void TextureCache::UnregisterImage(ImageId image_id) {
     ++registry_generation;
+    MediEvil::FrameTrace::Inc(MediEvil::FrameTrace::ImagesFreed);
     Image& image = slot_images[image_id];
     ASSERT_MSG(True(image.flags & ImageFlagBits::Registered),
                "Trying to unregister an already unregistered image");

@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include "medievil/frame_trace.h"
+
 #include <atomic>
 #include <mutex>
 #include <shared_mutex>
@@ -205,6 +207,7 @@ public:
         const auto dispatches_avg = dispatch_count_avg.load(std::memory_order_relaxed);
         dispatch_count_avg.store(dispatches_avg + (float(dispatches) - dispatches_avg) * smoothing,
                                  std::memory_order_relaxed);
+        MediEvil::FrameTrace::OnFlip(flip_frame_count + 1, u32(draws), u32(dispatches));
         ++flip_frame_count;
     }
 

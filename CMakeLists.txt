@@ -1275,6 +1275,8 @@ set(EMULATOR src/emulator.cpp
              src/medievil/autopilot.h
              src/medievil/profiler.cpp
              src/medievil/profiler.h
+             src/medievil/frame_trace.cpp
+             src/medievil/frame_trace.h
 )
 
 # shadNet protobuf generation

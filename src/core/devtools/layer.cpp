@@ -394,6 +394,13 @@ void L::Draw() {
     const auto io = GetIO();
     PushID("DevtoolsLayer");
 
+    if (MediEvil::FrameTrace::g_enabled) {
+        char buf[32];
+        std::snprintf(buf, sizeof(buf), "F%u", DebugState.flip_frame_count.load());
+        GetForegroundDrawList()->AddText(ImVec2(io.DisplaySize.x - 90.0f, 4.0f),
+                                         IM_COL32(255, 255, 0, 255), buf);
+    }
+
     if (!DebugState.IsGuestThreadsPaused()) {
         const auto fn = DebugState.flip_frame_count.load();
         frame_graph.AddFrame(fn, DebugState.FrameDeltaTime);

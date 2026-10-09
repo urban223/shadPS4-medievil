@@ -13,6 +13,7 @@
 #include "video_core/renderer_vulkan/liverpool_to_vk.h"
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
+#include "medievil/frame_trace.h"
 #include "video_core/renderer_vulkan/vk_rasterizer.h"
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
@@ -187,17 +188,20 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     scheduler.PopPendingOperations();
 
     if (!FilterDraw()) {
+        MediEvil::FrameTrace::Inc(MediEvil::FrameTrace::DrawsFiltered);
         return;
     }
 
     const auto& regs = liverpool->regs;
     const GraphicsPipeline* pipeline = pipeline_cache.GetGraphicsPipeline();
     if (!pipeline) {
+        MediEvil::FrameTrace::Inc(MediEvil::FrameTrace::DrawsNoPipeline);
         return;
     }
 
     PrepareRenderState(pipeline);
     if (!BindResources(pipeline)) {
+        MediEvil::FrameTrace::Inc(MediEvil::FrameTrace::DrawsBindFailed);
         return;
     }
     const auto state = BeginRendering(pipeline);
@@ -317,6 +321,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
 
 void Rasterizer::DispatchDirect() {
     RENDERER_TRACE;
+    scheduler.DebugFullBarrier();
 
     scheduler.PopPendingOperations();
 
@@ -352,6 +357,7 @@ void Rasterizer::DispatchDirect() {
 
 void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
     RENDERER_TRACE;
+    scheduler.DebugFullBarrier();
 
     scheduler.PopPendingOperations();
 

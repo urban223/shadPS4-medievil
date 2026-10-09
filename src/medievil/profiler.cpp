@@ -22,12 +22,14 @@
 // windows.h must come first
 #include <dbghelp.h>
 #include <tlhelp32.h>
+#include <psapi.h>
 
 #include "common/logging/log.h"
 #include "common/types.h"
 #include "medievil/profiler.h"
 
 #pragma comment(lib, "dbghelp.lib")
+#pragma comment(lib, "psapi.lib")
 
 namespace MediEvil {
 
@@ -126,10 +128,21 @@ void Run(std::wstring needle, int delay_s, int duration_s, std::string out_path)
         }
         return it->second;
     };
-    std::unordered_map<std::string, u64> self, inclusive;
+    // Range of our own module, to attribute driver/CRT time to the nearest caller in our code.
+    MODULEINFO mi{};
+    GetModuleInformation(proc, GetModuleHandleW(nullptr), &mi, sizeof(mi));
+    const u64 mod_lo = reinterpret_cast<u64>(mi.lpBaseOfDll);
+    const u64 mod_hi = mod_lo + mi.SizeOfImage;
+    std::unordered_map<std::string, u64> self, inclusive, attributed;
     for (const auto& st : stacks) {
         if (st.empty()) {
             continue;
+        }
+        for (u64 a : st) {
+            if (a >= mod_lo && a < mod_hi) {
+                ++attributed[name_of(a)];
+                break;
+            }
         }
         ++self[name_of(st.front())];
         std::unordered_set<std::string> seen;

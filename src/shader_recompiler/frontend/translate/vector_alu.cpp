@@ -170,7 +170,7 @@ void Translator::EmitVectorAlu(const GcnInst& inst) {
     case Opcode::V_EXP_F32:
         return V_EXP_F32(inst);
     case Opcode::V_LOG_CLAMP_F32:
-        return V_LOG_F32(inst);
+        return V_LOG_CLAMP_F32(inst);
     case Opcode::V_LOG_F32:
         return V_LOG_F32(inst);
     case Opcode::V_RCP_F32:
@@ -182,11 +182,11 @@ void Translator::EmitVectorAlu(const GcnInst& inst) {
     case Opcode::V_RCP_IFLAG_F32:
         return V_RCP_F32(inst);
     case Opcode::V_RCP_CLAMP_F32:
-        return V_RCP_F32(inst);
+        return V_RCP_CLAMP_F32(inst);
     case Opcode::V_RSQ_CLAMP_F32:
-        return V_RSQ_F32(inst);
+        return V_RSQ_CLAMP_F32(inst);
     case Opcode::V_RSQ_LEGACY_F32:
-        return V_RSQ_F32(inst);
+        return V_RSQ_LEGACY_F32(inst);
     case Opcode::V_RSQ_F32:
         return V_RSQ_F32(inst);
     case Opcode::V_SQRT_F32:
@@ -1056,18 +1056,42 @@ void Translator::V_RCP_F32(const GcnInst& inst) {
     SetDst(inst.dst[0], ir.FPRecip(src0));
 }
 
+// MediEvil port: GCN clamp/legacy variants never produce infinities. Passing infinities
+// through let them turn into NaNs downstream (black post-processed frames in UE4 effects).
+IR::F32 Translator::ReplaceInf(const IR::F32& result, bool with_zero) {
+    const IR::U32 bits{ir.BitCast<IR::U32>(result)};
+    const IR::U32 sign{ir.BitwiseAnd(bits, ir.Imm32(0x80000000u))};
+    // Signed zero for legacy ops, signed FLT_MAX (0x7f7fffff) for clamp ops.
+    IR::U32 replacement{sign};
+    if (!with_zero) {
+        replacement = IR::U32{ir.BitwiseOr(sign, ir.Imm32(0x7f7fffffu))};
+    }
+    return IR::F32{ir.Select(ir.FPIsInf(result), ir.BitCast<IR::F32>(replacement), result)};
+}
+
 void Translator::V_RCP_LEGACY_F32(const GcnInst& inst) {
     const IR::F32 src0{GetSrc<IR::F32>(inst.src[0])};
-    const auto result = ir.FPRecip(src0);
-    const auto inf = ir.FPIsInf(result);
+    SetDst(inst.dst[0], ReplaceInf(ir.FPRecip(src0), true));
+}
 
-    const auto raw_result = ir.ConvertFToU(32, result);
-    const auto sign_bit = ir.ShiftRightLogical(raw_result, ir.Imm32(31u));
-    const auto sign_bit_set = ir.INotEqual(sign_bit, ir.Imm32(0u));
-    const IR::F32 inf_result{ir.Select(sign_bit_set, ir.Imm32(-0.0f), ir.Imm32(0.0f))};
-    const IR::F32 val{ir.Select(inf, inf_result, result)};
+void Translator::V_RCP_CLAMP_F32(const GcnInst& inst) {
+    const IR::F32 src0{GetSrc<IR::F32>(inst.src[0])};
+    SetDst(inst.dst[0], ReplaceInf(ir.FPRecip(src0), false));
+}
 
-    SetDst(inst.dst[0], val);
+void Translator::V_RSQ_CLAMP_F32(const GcnInst& inst) {
+    const IR::F32 src0{GetSrc<IR::F32>(inst.src[0])};
+    SetDst(inst.dst[0], ReplaceInf(ir.FPRecipSqrt(src0), false));
+}
+
+void Translator::V_RSQ_LEGACY_F32(const GcnInst& inst) {
+    const IR::F32 src0{GetSrc<IR::F32>(inst.src[0])};
+    SetDst(inst.dst[0], ReplaceInf(ir.FPRecipSqrt(src0), true));
+}
+
+void Translator::V_LOG_CLAMP_F32(const GcnInst& inst) {
+    const IR::F32 src0{GetSrc<IR::F32>(inst.src[0])};
+    SetDst(inst.dst[0], ReplaceInf(ir.FPLog2(src0), false));
 }
 
 void Translator::V_RCP_F64(const GcnInst& inst) {

@@ -212,7 +212,20 @@ void Run(const std::vector<Command>& cmds) {
         } else if (op == "skipuntil") {
             const int lo = ArgInt(c, 1, 0), hi = ArgInt(c, 2, 1 << 30);
             const int hold = ArgInt(c, 3, 3000), timeout = ArgInt(c, 4, 60000);
-            const auto btn = kButtons.find(c.args.size() > 5 ? c.args[5] : "circle");
+            // Comma separated buttons are pressed in turn (e.g. "options,circle").
+            std::vector<SDL_GamepadButton> btns;
+            {
+                std::string list = c.args.size() > 5 ? c.args[5] : "circle";
+                for (size_t pos = 0; pos <= list.size();) {
+                    const size_t next = std::min(list.find(',', pos), list.size());
+                    if (const auto it = kButtons.find(list.substr(pos, next - pos));
+                        it != kButtons.end()) {
+                        btns.push_back(it->second);
+                    }
+                    pos = next + 1;
+                }
+            }
+            size_t btn_idx = 0;
             const auto start = std::chrono::steady_clock::now();
             auto stable_since = start;
             bool in_range = false;
@@ -233,11 +246,12 @@ void Run(const std::vector<Command>& cmds) {
                     LOG_WARNING(Input, "autopilot: skipuntil timed out (draws {:.0f})", draws);
                     break;
                 }
-                if (!ok && btn != kButtons.end() &&
+                if (!ok && !btns.empty() &&
                     now - last_press >= std::chrono::milliseconds(2500)) {
-                    SetButton(btn->second, true);
+                    const auto b = btns[btn_idx++ % btns.size()];
+                    SetButton(b, true);
                     Sleep(120);
-                    SetButton(btn->second, false);
+                    SetButton(b, false);
                     last_press = now;
                 }
                 Sleep(100);

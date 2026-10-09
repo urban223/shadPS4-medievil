@@ -228,6 +228,11 @@ public:
     void V_LOG_F32(const GcnInst& inst);
     void V_RCP_F32(const GcnInst& inst);
     void V_RCP_LEGACY_F32(const GcnInst& inst);
+    void V_RCP_CLAMP_F32(const GcnInst& inst);
+    void V_RSQ_CLAMP_F32(const GcnInst& inst);
+    void V_RSQ_LEGACY_F32(const GcnInst& inst);
+    void V_LOG_CLAMP_F32(const GcnInst& inst);
+    IR::F32 ReplaceInf(const IR::F32& result, bool with_zero);
     void V_RCP_F64(const GcnInst& inst);
     void V_RSQ_F32(const GcnInst& inst);
     void V_SQRT_F32(const GcnInst& inst);

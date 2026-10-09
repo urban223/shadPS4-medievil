@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include <chrono>
+#include <cstdlib>
 #include "common/assert.h"
 #include "common/debug.h"
 #include "common/thread.h"
@@ -29,11 +30,31 @@ Scheduler::~Scheduler() {
 #endif
 }
 
+static const bool g_full_barriers = [] {
+    const char* env = std::getenv("MEDIEVIL_FULLBARRIERS");
+    return env && *env && *env != '0';
+}();
+
+void Scheduler::DebugFullBarrier() {
+    // MediEvil port diagnostics: serialize everything to expose missing synchronization.
+    if (!g_full_barriers) {
+        return;
+    }
+    EndRendering();
+    const vk::MemoryBarrier barrier = {
+        .srcAccessMask = vk::AccessFlagBits::eMemoryWrite,
+        .dstAccessMask = vk::AccessFlagBits::eMemoryRead | vk::AccessFlagBits::eMemoryWrite,
+    };
+    CommandBuffer().pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands,
+                                    vk::PipelineStageFlagBits::eAllCommands, {}, barrier, {}, {});
+}
+
 void Scheduler::BeginRendering(const RenderState& new_state) {
     if (is_rendering && render_state == new_state) {
         return;
     }
     EndRendering();
+    DebugFullBarrier();
     is_rendering = true;
     render_state = new_state;
 
