@@ -10,6 +10,9 @@
 //   every <ms>                      screenshot periodically in the background (0 = off)
 //   repeat <n> ... end              repeat the enclosed block n times
 //   include <file>                  splice another script (path relative to this one)
+//   skipuntil <lo> <hi> <hold_ms> <timeout_ms> [button]
+//                                   press <button> (default circle) every 2.5s until the
+//                                   per-frame draw count stays within [lo, hi] for hold_ms
 //   quit                            close the window
 // Buttons: cross circle square triangle l1 r1 l3 r3 options share touchpad up down left right
 // Axes (stick): lx ly rx ry l2 r2 (triggers 0..1)
@@ -205,6 +208,39 @@ void Run(const std::vector<Command>& cmds) {
         } else if (op == "repeat") {
             for (int i = 0, n = ArgInt(c, 1, 1); i < n; ++i) {
                 Run(c.body);
+            }
+        } else if (op == "skipuntil") {
+            const int lo = ArgInt(c, 1, 0), hi = ArgInt(c, 2, 1 << 30);
+            const int hold = ArgInt(c, 3, 3000), timeout = ArgInt(c, 4, 60000);
+            const auto btn = kButtons.find(c.args.size() > 5 ? c.args[5] : "circle");
+            const auto start = std::chrono::steady_clock::now();
+            auto stable_since = start;
+            bool in_range = false;
+            auto last_press = start;
+            for (;;) {
+                const auto now = std::chrono::steady_clock::now();
+                const float draws = DebugState.GetDrawCallsAvg();
+                const bool ok = draws >= lo && draws <= hi;
+                if (ok && !in_range) {
+                    stable_since = now;
+                }
+                in_range = ok;
+                if (ok && now - stable_since >= std::chrono::milliseconds(hold)) {
+                    LOG_INFO(Input, "autopilot: skipuntil reached (draws {:.0f})", draws);
+                    break;
+                }
+                if (now - start >= std::chrono::milliseconds(timeout)) {
+                    LOG_WARNING(Input, "autopilot: skipuntil timed out (draws {:.0f})", draws);
+                    break;
+                }
+                if (!ok && btn != kButtons.end() &&
+                    now - last_press >= std::chrono::milliseconds(2500)) {
+                    SetButton(btn->second, true);
+                    Sleep(120);
+                    SetButton(btn->second, false);
+                    last_press = now;
+                }
+                Sleep(100);
             }
         } else if (op == "quit") {
             SDL_Event e{};

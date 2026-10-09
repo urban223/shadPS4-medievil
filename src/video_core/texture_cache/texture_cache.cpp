@@ -560,21 +560,37 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
         lookup_cache.clear();
         lookup_generation = registry_generation;
     }
-    const u64 lookup_key = info.guest_address ^ (info.guest_size << 40) ^
+    u32 props_raw{};
+    std::memcpy(&props_raw, &info.props, std::min(sizeof(props_raw), sizeof(info.props)));
+    const auto matches = [&](const LookupEntry& e) {
+        return e.guest_address == info.guest_address && e.guest_size == info.guest_size &&
+               e.size == info.size && e.pixel_format == info.pixel_format && e.type == info.type &&
+               e.resources == info.resources && e.num_bits == info.num_bits &&
+               e.num_samples == info.num_samples && e.pitch == info.pitch &&
+               e.tile_mode == info.tile_mode && e.props == props_raw &&
+               e.alt_tile == info.alt_tile && e.binding == desc.type && e.exact_fmt == exact_fmt;
+    };
+    const u64 lookup_key = info.guest_address ^ (u64(info.guest_size) << 40) ^
                            (u64(info.pixel_format) << 20) ^ (u64(info.type) << 56) ^
                            (u64(info.size.width) << 2) ^ (u64(info.size.height) << 32) ^
-                           (u64(info.size.depth) << 48) ^ u64(exact_fmt);
-    if (const auto it = lookup_cache.find(lookup_key); it != lookup_cache.end()) {
+                           (u64(info.size.depth) << 48) ^ (u64(info.resources.levels) << 12) ^
+                           (u64(info.resources.layers) << 26) ^ (u64(desc.type) << 61) ^
+                           u64(exact_fmt);
+    if (const auto it = lookup_cache.find(lookup_key);
+        it != lookup_cache.end() && matches(it->second)) {
         const auto& e = it->second;
-        if (e.guest_address == info.guest_address && e.guest_size == info.guest_size &&
-            e.size == info.size && e.pixel_format == info.pixel_format && e.type == info.type &&
-            e.exact_fmt == exact_fmt) {
-            Image& image = slot_images[e.id];
-            image.tick_accessed_last = scheduler.CurrentTick();
-            TouchImage(image);
-            return e.id;
+        Image& image = slot_images[e.id];
+        image.tick_accessed_last = scheduler.CurrentTick();
+        TouchImage(image);
+        if (e.view_mip > 0) {
+            desc.view_info.range.base.level = e.view_mip;
         }
+        if (e.view_slice > 0) {
+            desc.view_info.range.base.layer = e.view_slice;
+        }
+        return e.id;
     }
+    const u64 generation_before = registry_generation;
 
     SmallVector<ImageId, 8> image_ids;
     ForEachImageInRegion(info.guest_address, info.guest_size,
@@ -607,7 +623,6 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
     // Try to resolve overlaps (if any)
     int view_mip{-1};
     int view_slice{-1};
-    const bool perfect_match = static_cast<bool>(image_id);
     if (!image_id) {
         for (const auto& cache_id : image_ids) {
             view_mip = -1;
@@ -652,10 +667,14 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
     image.tick_accessed_last = scheduler.CurrentTick();
     TouchImage(image);
 
-    if (perfect_match && lookup_generation == registry_generation) {
+    if (registry_generation == generation_before) {
+        // Nothing was created, freed or re-registered: the resolution is reproducible.
         lookup_cache[lookup_key] = {info.guest_address, info.guest_size, info.size,
-                                    info.pixel_format, info.type,      exact_fmt,
-                                    image_id};
+                                    info.pixel_format,  info.type,       info.resources,
+                                    info.num_bits,      info.num_samples, info.pitch,
+                                    info.tile_mode,     props_raw,       info.alt_tile,
+                                    desc.type,          exact_fmt,       image_id,
+                                    view_mip,           view_slice};
     }
 
     // If the image requested is a subresource of the image from cache record its location.

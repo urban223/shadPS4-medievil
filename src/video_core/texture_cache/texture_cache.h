@@ -366,12 +366,22 @@ private:
     // MediEvil port: memo of exact FindImage matches, dropped whenever the image set changes.
     struct LookupEntry {
         VAddr guest_address;
-        u64 guest_size;
+        u32 guest_size;
         Extent3D size;
         vk::Format pixel_format;
         AmdGpu::ImageType type;
+        SubresourceExtent resources;
+        u32 num_bits;
+        u32 num_samples;
+        u32 pitch;
+        AmdGpu::TileMode tile_mode;
+        u32 props;
+        bool alt_tile;
+        BindingType binding;
         bool exact_fmt;
         ImageId id;
+        s32 view_mip;
+        s32 view_slice;
     };
     tsl::robin_map<u64, LookupEntry> lookup_cache;
     u64 registry_generation{};
