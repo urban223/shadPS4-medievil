@@ -296,11 +296,9 @@ Users UserManager::CreateDefaultUsers() {
             std::filesystem::create_directory(user_dir / "savedata");
             std::filesystem::create_directory(user_dir / "trophy");
             std::filesystem::create_directory(user_dir / "inputs");
-            if (u.user_id == 1000) {
-                TransferOption user_choice = AskMigrationOption();
-                CheckAndMigrateSaves(user_choice);
-                CheckAndMigrateTrophies(user_choice);
-            }
+            // MediEvil PC port: no legacy shadPS4 layout to migrate from, and the modal prompt
+            // ended up hidden behind the fullscreen window on first launch.
+            (void)&AskMigrationOption;
         }
     }
 

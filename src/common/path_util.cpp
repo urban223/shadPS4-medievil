@@ -88,6 +88,15 @@ static std::optional<std::filesystem::path> GetBundleParentDirectory() {
 static auto UserPaths = [] {
     // Try the portable user directory first.
     auto user_dir = std::filesystem::current_path() / PORTABLE_DIR;
+#ifdef _WIN32
+    // MediEvil PC port: settings, saves and caches always live next to the executable.
+    {
+        wchar_t exe_path[MAX_PATH]{};
+        GetModuleFileNameW(nullptr, exe_path, MAX_PATH);
+        user_dir = std::filesystem::path(exe_path).parent_path() / PORTABLE_DIR;
+        std::filesystem::create_directories(user_dir);
+    }
+#endif
     if (!std::filesystem::exists(user_dir)) {
         // If it doesn't exist, use the standard path for the platform instead.
         // NOTE: On Windows we currently just create the portable directory instead.
