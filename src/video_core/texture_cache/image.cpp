@@ -133,7 +133,8 @@ Image::Image(const Vulkan::Instance& instance, Vulkan::Runtime& runtime_,
     image_uid = global_image_uid.Next();
     vk::ImageCreateFlags flags{vk::ImageCreateFlagBits::eMutableFormat |
                                vk::ImageCreateFlagBits::eExtendedUsage};
-    if (info.props.is_volume) {
+    // MediEvil port: every 3D image may be rendered to as a 2D array (see ResolveOverlap).
+    if (info.props.is_volume || info.type == AmdGpu::ImageType::Color3D) {
         flags |= vk::ImageCreateFlagBits::e2DArrayCompatible;
         if (instance.Is2dViewOf3dSupported()) {
             flags |= vk::ImageCreateFlagBits::e2DViewCompatibleEXT;
@@ -224,6 +225,13 @@ void Image::GetBarriers(Barriers& barriers, vk::ImageLayout dst_layout, vk::Acce
                         std::optional<SubresourceRange> subres_range) {
     auto& last_state = backing->state;
     auto& subresource_states = backing->subresource_states;
+
+    // MediEvil port: a 2D-array view of a 3D image addresses depth slices as layers, but
+    // barriers on 3D images always cover array layer 0 only.
+    if (subres_range && info.type == AmdGpu::ImageType::Color3D) {
+        subres_range->base.layer = 0;
+        subres_range->extent.layers = info.resources.layers;
+    }
 
     const bool needs_partial_transition =
         subres_range &&

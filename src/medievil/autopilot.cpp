@@ -37,6 +37,7 @@
 #include "common/logging/log.h"
 #include "core/debug_state.h"
 #include "medievil/autopilot.h"
+#include "medievil/profiler.h"
 #include "video_core/renderdoc.h"
 
 namespace MediEvil {
@@ -218,6 +219,7 @@ void Run(const std::vector<Command>& cmds) {
 } // namespace
 
 void StartAutopilot(Input::GameControllers* controllers) {
+    StartProfilerFromEnv();
     const char* path = std::getenv("MEDIEVIL_AUTOPILOT");
     if (!path || !*path) {
         return;

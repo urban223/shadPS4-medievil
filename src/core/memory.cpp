@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2025-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <boost/container/small_vector.hpp>
 #include "common/alignment.h"
 #include "common/assert.h"
 #include "common/debug.h"
@@ -167,13 +168,15 @@ bool MemoryManager::TryWriteBacking(void* address, const void* data, u64 size) {
     ASSERT_MSG(IsValidMapping(virtual_addr, size), "Attempted to access invalid address {:#x}",
                virtual_addr);
 
-    std::vector<VirtualMemoryArea> vmas_to_write;
+    // MediEvil port: keep pointers instead of copying each VMA (and its phys_areas std::map)
+    // on every GPU label write; the shared lock keeps them alive for the duration.
+    boost::container::small_vector<const VirtualMemoryArea*, 4> vmas_to_write;
     auto current_vma = FindVMA(virtual_addr);
     while (current_vma->second.Overlaps(virtual_addr, size)) {
         if (!HasPhysicalBacking(current_vma->second)) {
             break;
         }
-        vmas_to_write.emplace_back(current_vma->second);
+        vmas_to_write.push_back(&current_vma->second);
         current_vma++;
     }
 
@@ -181,7 +184,9 @@ bool MemoryManager::TryWriteBacking(void* address, const void* data, u64 size) {
         return false;
     }
 
-    for (auto& vma : vmas_to_write) {
+    const u8* src = static_cast<const u8*>(data);
+    for (const auto* vma_ptr : vmas_to_write) {
+        const auto& vma = *vma_ptr;
         auto start_in_vma = std::max<VAddr>(virtual_addr, vma.base) - vma.base;
         auto phys_handle = std::prev(vma.phys_areas.upper_bound(start_in_vma));
         for (; phys_handle != vma.phys_areas.end(); phys_handle++) {
@@ -192,7 +197,8 @@ bool MemoryManager::TryWriteBacking(void* address, const void* data, u64 size) {
                 std::max<u64>(start_in_vma, phys_handle->first) - phys_handle->first;
             u8* backing = impl.BackingBase() + phys_handle->second.base + start_in_dma;
             u64 copy_size = std::min<u64>(size, phys_handle->second.size - start_in_dma);
-            memcpy(backing, data, copy_size);
+            memcpy(backing, src, copy_size);
+            src += copy_size;
             size -= copy_size;
         }
     }

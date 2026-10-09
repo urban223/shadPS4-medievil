@@ -295,6 +295,21 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
             return {ExpandImage(image_info, cache_image_id), -1, -1};
         }
 
+        // MediEvil port: UE4 renders its color-grading LUT slice by slice into a 2D array and
+        // then samples it as a 3D texture. Converting between the two every frame meant a new
+        // image + copy twice per frame. Volume images are created 2D-array compatible, so a
+        // layered render target can simply be a 2D-array view of the cached 3D image.
+        if (binding == BindingType::RenderTarget &&
+            cache_image.info.type == AmdGpu::ImageType::Color3D &&
+            image_info.type != AmdGpu::ImageType::Color3D &&
+            image_info.size.width == cache_image.info.size.width &&
+            image_info.size.height == cache_image.info.size.height &&
+            image_info.resources.layers == cache_image.info.size.depth &&
+            image_info.resources.levels <= cache_image.info.resources.levels &&
+            IsVulkanFormatCompatible(cache_image.info.pixel_format, image_info.pixel_format)) {
+            return {merged_image_id ? merged_image_id : cache_image_id, -1, -1};
+        }
+
         if (image_info.guest_size == cache_image.info.guest_size &&
             (image_info.type == AmdGpu::ImageType::Color3D ||
              cache_image.info.type == AmdGpu::ImageType::Color3D)) {
@@ -499,8 +514,13 @@ ImageId TextureCache::ExpandImage(const ImageInfo& info, ImageId image_id) {
     {
         // MediEvil port diagnostics: which images keep getting re-created.
         static u32 expand_logs = 0;
+        static u64 expand_total = 0;
+        if (++expand_total % 5000 == 0) {
+            LOG_WARNING(Render_Vulkan, "ExpandImage total {} at tick {}", expand_total,
+                        scheduler.CurrentTick());
+        }
         const auto& src = slot_images[image_id].info;
-        if (expand_logs < 40) {
+        if (expand_logs < 10) {
             ++expand_logs;
             LOG_WARNING(Render_Vulkan,
                         "ExpandImage {:#x}: {}x{}x{} {} lv{} ly{} type{} block{} -> {}x{}x{} {} "
@@ -588,6 +608,12 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
         if (exact_fmt && info.pixel_format != image_resolved.info.pixel_format) {
             // Cannot reuse this image as we need the exact requested format.
             image_id = {};
+        } else if (image_resolved.info.type == AmdGpu::ImageType::Color3D &&
+                   info.type != AmdGpu::ImageType::Color3D &&
+                   info.resources.layers <= image_resolved.info.size.depth &&
+                   info.resources.levels <= image_resolved.info.resources.levels) {
+            // MediEvil port: 2D-array view over the depth slices of a 3D image (see
+            // ResolveOverlap), its layer count is the 3D depth.
         } else if (image_resolved.info.resources < info.resources) {
             // The image was clearly picked up wrong.
             FreeImage(image_id);
