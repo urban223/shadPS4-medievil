@@ -556,6 +556,26 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
     const auto& info = desc.info;
     ASSERT(info.guest_address != 0);
 
+    if (lookup_generation != registry_generation) {
+        lookup_cache.clear();
+        lookup_generation = registry_generation;
+    }
+    const u64 lookup_key = info.guest_address ^ (info.guest_size << 40) ^
+                           (u64(info.pixel_format) << 20) ^ (u64(info.type) << 56) ^
+                           (u64(info.size.width) << 2) ^ (u64(info.size.height) << 32) ^
+                           (u64(info.size.depth) << 48) ^ u64(exact_fmt);
+    if (const auto it = lookup_cache.find(lookup_key); it != lookup_cache.end()) {
+        const auto& e = it->second;
+        if (e.guest_address == info.guest_address && e.guest_size == info.guest_size &&
+            e.size == info.size && e.pixel_format == info.pixel_format && e.type == info.type &&
+            e.exact_fmt == exact_fmt) {
+            Image& image = slot_images[e.id];
+            image.tick_accessed_last = scheduler.CurrentTick();
+            TouchImage(image);
+            return e.id;
+        }
+    }
+
     SmallVector<ImageId, 8> image_ids;
     ForEachImageInRegion(info.guest_address, info.guest_size,
                          [&](ImageId image_id, Image& image) { image_ids.push_back(image_id); });
@@ -587,6 +607,7 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
     // Try to resolve overlaps (if any)
     int view_mip{-1};
     int view_slice{-1};
+    const bool perfect_match = static_cast<bool>(image_id);
     if (!image_id) {
         for (const auto& cache_id : image_ids) {
             view_mip = -1;
@@ -630,6 +651,12 @@ ImageId TextureCache::FindImage(ImageDesc& desc, bool exact_fmt) {
     Image& image = slot_images[image_id];
     image.tick_accessed_last = scheduler.CurrentTick();
     TouchImage(image);
+
+    if (perfect_match && lookup_generation == registry_generation) {
+        lookup_cache[lookup_key] = {info.guest_address, info.guest_size, info.size,
+                                    info.pixel_format, info.type,      exact_fmt,
+                                    image_id};
+    }
 
     // If the image requested is a subresource of the image from cache record its location.
     if (view_mip > 0) {
@@ -849,6 +876,7 @@ vk::Sampler TextureCache::GetSampler(const AmdGpu::Sampler& sharp,
 }
 
 void TextureCache::RegisterImage(ImageId image_id) {
+    ++registry_generation;
     Image& image = slot_images[image_id];
     ASSERT_MSG(False(image.flags & ImageFlagBits::Registered),
                "Trying to register an already registered image");
@@ -867,6 +895,7 @@ void TextureCache::RegisterImage(ImageId image_id) {
 }
 
 void TextureCache::UnregisterImage(ImageId image_id) {
+    ++registry_generation;
     Image& image = slot_images[image_id];
     ASSERT_MSG(True(image.flags & ImageFlagBits::Registered),
                "Trying to unregister an already unregistered image");
@@ -1073,6 +1102,7 @@ void TextureCache::RunGarbageCollector() {
 }
 
 void TextureCache::DeleteImage(ImageId image_id) {
+    ++registry_generation;
     Image& image = slot_images[image_id];
     ASSERT_MSG(image.IsUntracked(), "Image was not untracked");
     ASSERT_MSG(False(image.flags & ImageFlagBits::Registered), "Image was not unregistered");

@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <tsl/robin_map.h>
+
 #include <mutex>
 #include <absl/container/flat_hash_map.h>
 #include <absl/container/flat_hash_set.h>
@@ -360,6 +362,20 @@ private:
     PageManager& tracker;
     PageTable page_table;
     Common::SlotVector<Image> slot_images;
+
+    // MediEvil port: memo of exact FindImage matches, dropped whenever the image set changes.
+    struct LookupEntry {
+        VAddr guest_address;
+        u64 guest_size;
+        Extent3D size;
+        vk::Format pixel_format;
+        AmdGpu::ImageType type;
+        bool exact_fmt;
+        ImageId id;
+    };
+    tsl::robin_map<u64, LookupEntry> lookup_cache;
+    u64 registry_generation{};
+    u64 lookup_generation{~0ULL};
     Common::SlotVector<ImageView> slot_image_views;
     Common::SlotVector<Sampler> slot_samplers;
     BlitHelper blit_helper;
