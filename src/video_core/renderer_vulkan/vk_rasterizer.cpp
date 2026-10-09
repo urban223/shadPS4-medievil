@@ -1431,6 +1431,16 @@ void Rasterizer::MapMemory(VAddr addr, u64 size) {
         std::scoped_lock lock{mapped_ranges_mutex};
         mapped_ranges += decltype(mapped_ranges)::interval_type::right_open(addr, addr + size);
     }
+    // A fresh host mapping carries no write protection, so pages the caches still consider
+    // protected (clean) would silently miss CPU writes. Treat the new memory as CPU-modified.
+    static const bool skip = [] {
+        const char* env = std::getenv("MEDIEVIL_NO_MAP_INVALIDATE");
+        return env && *env == '1';
+    }();
+    if (!skip) {
+        buffer_cache.InvalidateMemory(addr, size);
+        texture_cache.InvalidateMemory(addr, size);
+    }
 }
 
 void Rasterizer::RegisterMemory(VAddr addr, u64 size) {
