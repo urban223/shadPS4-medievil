@@ -6,6 +6,7 @@
 
 #include "common/arch.h"
 #include "common/assert.h"
+#include "common/logging/log.h"
 #include "common/types.h"
 #include "core/libraries/kernel/kernel.h"
 #include "core/libraries/kernel/posix_error.h"
@@ -226,7 +227,16 @@ s32 PthreadMutex::Lock(const OrbisKernelTimespec* abstime, u64 usec) {
 
     s32 ret = 0;
     if (abstime == nullptr) {
-        m_lock.lock();
+        // MediEvil port: report long waits so guest deadlocks can be attributed to an owner.
+        int waited_s = 0;
+        while (!m_lock.try_lock_for(std::chrono::seconds(5))) {
+            waited_s += 5;
+            const Pthread* owner = m_owner.load(std::memory_order_acquire);
+            LOG_WARNING(Kernel_Pthread,
+                        "mutex '{}' ({}) blocked {}s: waiter '{}', owner '{}' (count {})", name,
+                        static_cast<const void*>(this), waited_s, curthread ? curthread->name : "?",
+                        owner ? owner->name : "<none>", m_count);
+        }
     } else if (abstime != THR_RELTIME && (abstime->tv_nsec < 0 || abstime->tv_nsec >= 1000000000))
         [[unlikely]] {
         ret = POSIX_EINVAL;
