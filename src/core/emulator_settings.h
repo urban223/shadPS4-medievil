@@ -195,7 +195,7 @@ struct GeneralSettings {
     Setting<bool> show_splash{false};
     Setting<bool> discord_rpc_enabled{false};
     Setting<bool> show_fps_counter{false};
-    Setting<int> console_language{1};
+    Setting<int> console_language{8}; // MediEvil port: Russian
     Setting<int> big_picture_scale{1000};
     Setting<int> big_picture_folder_depth{2};
     Setting<bool> redzone_patches{false};
@@ -335,7 +335,7 @@ struct InputSettings {
     Setting<bool> motion_controls_enabled{true}; // specific
     Setting<bool> use_unified_input_config{true};
     Setting<std::string> default_controller_id{""};
-    Setting<bool> background_controller_input{false}; // specific
+    Setting<bool> background_controller_input{true}; // specific (MediEvil: pad works even if the window lost focus)
     Setting<bool> ime_accessibility_enabled{false};   // specific
     Setting<bool> ime_url_mail_short_panel{false};    // specific
     Setting<bool> is_circle_enter{false};             // specific
