@@ -301,14 +301,6 @@ Id EmitImageGradient(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id
     return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], sample) : sample;
 }
 
-// MediEvil port: float texels never carry NaN further (UE4's bloom chain turned a single NaN
-// into a black frame).
-static Id SanitizeNan(EmitContext& ctx, Id value) {
-    const Id zero = ctx.ConstantComposite(ctx.F32[4], ctx.f32_zero_value, ctx.f32_zero_value,
-                                          ctx.f32_zero_value, ctx.f32_zero_value);
-    return ctx.OpSelect(ctx.F32[4], ctx.OpIsNan(ctx.U1[4], value), zero, value);
-}
-
 Id EmitImageRead(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id lod, Id ms) {
     const auto& texture = ctx.images[handle & 0xFFFF];
     const Id color_type = texture.data_types->Get(4);
@@ -353,10 +345,7 @@ Id EmitImageRead(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id lod
         const Id image = ctx.OpLoad(texture.image_type, image_ptr);
         texel = ctx.OpImageRead(color_type, image, fixed_coords, operands.mask, operands.operands);
     }
-    if (texture.is_integer) {
-        return ctx.OpBitcast(ctx.F32[4], texel);
-    }
-    return SanitizeNan(ctx, texel);
+    return texture.is_integer ? ctx.OpBitcast(ctx.F32[4], texel) : texel;
 }
 
 void EmitImageWrite(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id lod, Id ms,
@@ -377,8 +366,7 @@ void EmitImageWrite(EmitContext& ctx, IR::Inst* inst, u32 handle, Id coords, Id 
         image_ptr = ctx.OpAccessChain(single_image_ptr_type, image_ptr, std::array{lod});
     }
     const Id image = ctx.OpLoad(texture.image_type, image_ptr);
-    const Id texel =
-        texture.is_integer ? ctx.OpBitcast(color_type, color) : SanitizeNan(ctx, color);
+    const Id texel = texture.is_integer ? ctx.OpBitcast(color_type, color) : color;
     ctx.OpImageWrite(image, fixed_coords, texel, operands.mask, operands.operands);
 }
 

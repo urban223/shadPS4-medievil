@@ -12,7 +12,7 @@
 
 namespace Serialization {
 /* You should increment versions below once corresponding serialization scheme is changed. */
-static constexpr u32 ShaderBinaryVersion = 15u; // MediEvil: NMax/NMin, clamp/legacy rcp/rsq, NaN sanitize, PKRTZ saturate, Inf clamp
+static constexpr u32 ShaderBinaryVersion = 16u; // MediEvil: NMax/NMin, clamp/legacy rcp/rsq, PKRTZ saturate
 static constexpr u32 ShaderMetaVersion = 6u;
 static constexpr u32 PipelineKeyVersion = 3u;
 } // namespace Serialization

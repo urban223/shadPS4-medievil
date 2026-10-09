@@ -48,6 +48,17 @@ Rasterizer::Rasterizer(const Instance& instance_, Scheduler& scheduler_, Runtime
     }
     memory->SetRasterizer(this);
 
+    // MEDIEVIL_PROBE=<ps hash>,<ps hash>,...: read back render-target texels after those passes.
+    if (const char* env = std::getenv("MEDIEVIL_PROBE"); env && *env) {
+        std::string_view list{env};
+        while (!list.empty()) {
+            const auto comma = list.find(',');
+            const auto item = list.substr(0, comma);
+            probe_hashes.push_back(std::strtoull(std::string{item}.c_str(), nullptr, 16));
+            list = comma == std::string_view::npos ? std::string_view{} : list.substr(comma + 1);
+        }
+    }
+
     scheduler.SetSubmitCallback([this](Vulkan::SubmitInfo& info) {
         runtime.FlushBarriers();
         buffer_cache.SubmitPendingArenaBinds(info);
@@ -185,6 +196,9 @@ void Rasterizer::EliminateFastClear() {
 
 void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     RENDERER_TRACE;
+    if (!probes.empty()) {
+        ResolveProbes();
+    }
 
     scheduler.PopPendingOperations();
 
@@ -249,6 +263,10 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
                     instance_offset);
     }
     DebugState.IncDrawCall();
+    if (!probe_hashes.empty()) {
+        ProbeRenderTarget(pipeline->GetGraphicsKey().stage_hashes[static_cast<u32>(
+            Shader::SwStage::Fragment)]);
+    }
 
     ResetBindings(false);
 }
@@ -332,6 +350,92 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     }
 
     ResetBindings(false);
+}
+
+static constexpr u32 ProbeSlotBytes = 256;
+static constexpr u32 ProbeSlots = 8192;
+
+void Rasterizer::ProbeRenderTarget(u64 ps_hash) {
+    if (std::find(probe_hashes.begin(), probe_hashes.end(), ps_hash) == probe_hashes.end()) {
+        return;
+    }
+    const auto& [image_id, desc] = cb_descs[0];
+    if (!image_id) {
+        return;
+    }
+    auto& image = texture_cache.GetImage(image_id);
+    const u32 bytes = image.info.num_bits / 8;
+    if (bytes == 0 || bytes > 16 || image.info.props.is_block) {
+        return;
+    }
+    if (!probe_buffer) {
+        probe_buffer = std::make_unique<VideoCore::Buffer>(
+            instance, 0, ProbeSlotBytes * ProbeSlots, VideoCore::MemoryType::HostCached,
+            "MediEvil probe");
+    }
+    const u32 slot = probe_slot++ % ProbeSlots;
+    const u32 w = image.info.size.width;
+    const u32 h = image.info.size.height;
+    const std::array<vk::BufferImageCopy, 3> copies{{
+        {slot * ProbeSlotBytes, 0, 0, {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+         {s32(w / 2), s32(h / 2), 0}, {1, 1, 1}},
+        {slot * ProbeSlotBytes + 16, 0, 0, {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+         {s32(w / 4), s32(h / 4), 0}, {1, 1, 1}},
+        {slot * ProbeSlotBytes + 32, 0, 0, {vk::ImageAspectFlagBits::eColor, 0, 0, 1},
+         {s32(w * 3 / 4), s32(h * 3 / 4), 0}, {1, 1, 1}},
+    }};
+    runtime.DownloadImage(&image, probe_buffer.get(), copies);
+    Probe probe{ps_hash, scheduler.CurrentTick(), u32(DebugState.GetFrameNum()), slot, bytes, w, h};
+    probe.num_buffers = 0;
+    boost::container::static_vector<vk::BufferCopy, 4> buffer_copies;
+    for (const auto& bound : bound_buffers) {
+        if (probe.num_buffers == 4) {
+            break;
+        }
+        if (bound.size < 32 || bound.buffer->CpuAddr() == 0) {
+            continue;
+        }
+        const u32 i = probe.num_buffers++;
+        const VAddr addr = bound.buffer->CpuAddr() + bound.offset;
+        probe.buffer_addr[i] = addr;
+        std::memcpy(probe.guest_bytes[i].data(), std::bit_cast<const u8*>(addr), 32);
+        runtime.CopyBuffer(bound.buffer, probe_buffer.get(),
+                           std::array{vk::BufferCopy{bound.offset,
+                                                     slot * ProbeSlotBytes + 64 + i * 32, 32}});
+    }
+    probes.push_back(probe);
+}
+
+void Rasterizer::ResolveProbes() {
+    while (!probes.empty() && scheduler.IsFree(probes.front().tick)) {
+        const Probe p = probes.front();
+        probes.pop_front();
+        probe_buffer->Invalidate(p.slot * ProbeSlotBytes, ProbeSlotBytes);
+        const u8* data = probe_buffer->mapped_data.data() + p.slot * ProbeSlotBytes;
+        std::string hex;
+        for (u32 pt = 0; pt < 3; ++pt) {
+            hex += ' ';
+            for (u32 b = 0; b < p.bytes; ++b) {
+                hex += fmt::format("{:02x}", data[pt * 16 + b]);
+            }
+        }
+        for (u32 i = 0; i < p.num_buffers; ++i) {
+            const u8* gpu = data + 64 + i * 32;
+            const bool same = std::memcmp(gpu, p.guest_bytes[i].data(), 32) == 0;
+            hex += fmt::format(" | buf {:x} {} g:", p.buffer_addr[i], same ? "same" : "DIFF");
+            for (u32 b = 0; b < 32; ++b) {
+                hex += fmt::format("{:02x}", p.guest_bytes[i][b]);
+            }
+            if (!same) {
+                hex += " gpu:";
+                for (u32 b = 0; b < 32; ++b) {
+                    hex += fmt::format("{:02x}", gpu[b]);
+                }
+            }
+        }
+        LOG_WARNING(Debug, "probe F{} ps {:016x} {}x{}{}", p.frame, p.ps_hash, p.width,
+                    p.height, hex);
+    }
 }
 
 void Rasterizer::RecordTraceDispatch(u64 cs_hash) {
@@ -1335,6 +1439,11 @@ void Rasterizer::RegisterMemory(VAddr addr, u64 size) {
 
 void Rasterizer::UnmapMemory(VAddr addr, u64 size) {
     buffer_cache.InvalidateMemory(addr, size);
+    if (MediEvil::FrameTrace::g_enabled) {
+        LOG_WARNING(Debug, "unmap {:x} +{:x} gpu_mod {}", addr, size,
+                    buffer_cache.IsRegionGpuModified(addr, size));
+    }
+    liverpool->SendCommand<false>([this, addr, size] { buffer_cache.ForgetGpuModified(addr, size); });
     texture_cache.UnmapMemory(addr, size);
     {
         std::scoped_lock lock{mapped_ranges_mutex};

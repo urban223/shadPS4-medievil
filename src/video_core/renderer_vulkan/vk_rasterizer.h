@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <deque>
 #include "common/recursive_lock.h"
 #include "common/shared_first_mutex.h"
 #include "video_core/buffer_cache/buffer_cache.h"
@@ -168,6 +169,24 @@ private:
     };
     std::vector<BoundBuffer> bound_buffers;
     void RecordTraceDispatch(u64 cs_hash);
+    void ProbeRenderTarget(u64 ps_hash);
+    void ResolveProbes();
+    struct Probe {
+        u64 ps_hash;
+        u64 tick;
+        u32 frame;
+        u32 slot;
+        u32 bytes;
+        u32 width;
+        u32 height;
+        u32 num_buffers;
+        std::array<u64, 4> buffer_addr;
+        std::array<std::array<u8, 32>, 4> guest_bytes;
+    };
+    std::unique_ptr<VideoCore::Buffer> probe_buffer;
+    std::vector<u64> probe_hashes;
+    std::deque<Probe> probes;
+    u32 probe_slot{};
     std::vector<VideoCore::ImageId> bound_images;
 
     u32 set_write_index{};

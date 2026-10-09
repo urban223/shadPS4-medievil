@@ -103,9 +103,6 @@ void Translator::ExportRenderTarget(const GcnInst& inst) {
                                     color_buffer.data_format == AmdGpu::DataFormat::Format8_8 ||
                                     color_buffer.data_format == AmdGpu::DataFormat::Format8_8_8_8);
 
-    // MediEvil port: keep NaN out of float render targets (see IMAGE_SAMPLE).
-    const bool float_target = color_buffer.num_format == AmdGpu::NumberFormat::Float;
-
     // Swizzle components and export
     for (u32 i = 0; i < 4; ++i) {
         const auto swizzled_comp = components[color_buffer.swizzle.Map(i)];
@@ -113,12 +110,6 @@ void Translator::ExportRenderTarget(const GcnInst& inst) {
             continue;
         }
         auto converted = ApplyWriteNumberConversion(ir, swizzled_comp, color_buffer.num_conversion);
-        if (float_target) {
-            converted = IR::F32{ir.Select(ir.FPIsNan(converted), ir.Imm32(0.f), converted)};
-            converted = IR::F32{ir.Select(
-                ir.FPIsInf(converted),
-                ir.FPClamp(converted, ir.Imm32(-65504.f), ir.Imm32(65504.f)), converted)};
-        }
         if (needs_unorm_fixup) {
             // FIXME: Fix-up for GPUs where float-to-unorm rounding is off from expected.
             converted = ir.FPSub(converted, ir.Imm32(1.f / 127500.f));

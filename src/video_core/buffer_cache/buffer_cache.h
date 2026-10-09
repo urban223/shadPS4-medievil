@@ -95,6 +95,9 @@ public:
     /// Return true when a region is modified from the GPU
     [[nodiscard]] bool IsRegionGpuModified(VAddr addr, size_t size);
 
+    /// Drops GPU-written state of memory whose backing was released (contents are undefined).
+    void ForgetGpuModified(VAddr addr, u64 size);
+
     /// Synchronizes all buffers needed for DMA.
     void SynchronizeDmaBuffers();
 
