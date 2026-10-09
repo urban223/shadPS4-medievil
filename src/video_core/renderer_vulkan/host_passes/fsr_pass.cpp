@@ -136,7 +136,11 @@ vk::ImageView FsrPass::Render(vk::CommandBuffer cmdbuf, vk::ImageView input,
         DebugState.is_using_fsr = false;
         return input;
     }
-    if (input_size.width >= output_size.width && input_size.height >= output_size.height) {
+    // MediEvil port: at 1:1 still run the pass for RCAS sharpening (softens TAA blur on
+    // native-resolution displays); only skip when downscaling or nothing would be done.
+    const bool upscaling = input_size.width < output_size.width || input_size.height < output_size.height;
+    const bool same_size = input_size.width == output_size.width && input_size.height == output_size.height;
+    if (!upscaling && !(same_size && settings.use_rcas)) {
         DebugState.is_using_fsr = false;
         return input;
     }

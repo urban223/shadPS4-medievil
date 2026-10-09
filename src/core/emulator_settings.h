@@ -413,8 +413,8 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(AudioSettings, audio_backend, sdl_mic_device,
 struct GPUSettings {
     Setting<u32> window_width{1920};
     Setting<u32> window_height{1080};
-    Setting<u32> internal_screen_width{1280};
-    Setting<u32> internal_screen_height{720};
+    Setting<u32> internal_screen_width{1920};
+    Setting<u32> internal_screen_height{1080};
     Setting<bool> null_gpu{false};
     Setting<bool> copy_gpu_buffers{false};
     Setting<u32> readbacks_mode{GpuReadbacksMode::Disabled};
@@ -427,7 +427,7 @@ struct GPUSettings {
     Setting<std::string> full_screen_mode{"Borderless"};
     Setting<std::string> present_mode{"Mailbox"};
     Setting<bool> hdr_allowed{false};
-    Setting<bool> fsr_enabled{false};
+    Setting<bool> fsr_enabled{true}; // MediEvil port: FSR upscale + RCAS sharpening
     Setting<bool> rcas_enabled{true};
     Setting<int> rcas_attenuation{250};
     Setting<bool> userfaultfd{false};

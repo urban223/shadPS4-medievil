@@ -23,9 +23,12 @@ void OnFlip(u32 flip_number, u32 draws, u32 dispatches) {
     for (u32 i = 0; i < Counter::Count; ++i) {
         c[i] = g_counters[i].exchange(0, std::memory_order_relaxed);
     }
-    LOG_WARNING(Debug, "frametrace F{} draws {} disp {} filt {} nopipe {} bindfail {} img+{} -{} exp{}",
+    LOG_WARNING(Debug,
+                "frametrace F{} draws {} disp {} filt {} nopipe {} bindfail {} img+{} -{} exp{} "
+                "metadisp {} fce {} fillmeta {}",
                 flip_number, draws, dispatches, c[DrawsFiltered], c[DrawsNoPipeline],
-                c[DrawsBindFailed], c[ImagesCreated], c[ImagesFreed], c[ImagesExpanded]);
+                c[DrawsBindFailed], c[ImagesCreated], c[ImagesFreed], c[ImagesExpanded],
+                c[MetaClearDispatches], c[FceClears], c[FillMetaClears]);
 }
 
 } // namespace MediEvil::FrameTrace

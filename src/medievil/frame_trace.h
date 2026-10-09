@@ -19,6 +19,9 @@ enum Counter : u32 {
     ImagesCreated,
     ImagesFreed,
     ImagesExpanded,
+    MetaClearDispatches,
+    FceClears,
+    FillMetaClears,
     Count,
 };
 

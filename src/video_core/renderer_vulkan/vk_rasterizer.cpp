@@ -176,6 +176,7 @@ void Rasterizer::EliminateFastClear() {
     auto& image = texture_cache.GetImage(image_id);
     const auto clear_value = LiverpoolToVK::ColorBufferClearValue(col_buf);
 
+    MediEvil::FrameTrace::Inc(MediEvil::FrameTrace::FceClears);
     ScopeMarkerBegin(fmt::format("EliminateFastClear:MRT={:#x}:M={:#x}", col_buf.Address(),
                                  col_buf.CmaskAddress()));
     runtime.ClearImage(&image, desc.view_info.range, clear_value);
@@ -626,6 +627,7 @@ bool Rasterizer::IsComputeMetaClear(const Pipeline* pipeline) {
             if (!desc.IsSpecial() && desc.is_written && texture_cache.ClearMeta(address)) {
                 // Assume all slices were updates
                 LOG_TRACE(Render_Vulkan, "Metadata update skipped");
+                MediEvil::FrameTrace::Inc(MediEvil::FrameTrace::MetaClearDispatches);
                 return true;
             }
         }
@@ -1198,7 +1200,9 @@ void Rasterizer::FillBuffer(VAddr address, u32 num_bytes, u32 value, bool is_gds
     ASSERT_MSG(address % 4 == 0 && num_bytes % 4 == 0,
                "FillBuffer address and size must be a multiple of 4 bytes");
     if (!is_gds) {
-        texture_cache.ClearMeta(address);
+        if (texture_cache.ClearMeta(address)) {
+            MediEvil::FrameTrace::Inc(MediEvil::FrameTrace::FillMetaClears);
+        }
         if (!buffer_cache.IsRegionGpuModified(address, num_bytes)) {
             u32* buffer = std::bit_cast<u32*>(address);
             std::fill(buffer, buffer + (num_bytes / sizeof(u32)), value);

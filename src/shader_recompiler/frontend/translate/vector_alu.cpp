@@ -849,8 +849,14 @@ void Translator::V_CVT_PKNORM_I16_F32(const GcnInst& inst) {
 }
 
 void Translator::V_CVT_PKRTZ_F16_F32(const GcnInst& inst) {
-    const IR::Value vec_f32 =
-        ir.CompositeConstruct(GetSrc<IR::F32>(inst.src[0]), GetSrc<IR::F32>(inst.src[1]));
+    // Round-toward-zero: finite values beyond the half range saturate to +-65504 instead of
+    // overflowing to infinity (which round-to-nearest packing would produce).
+    const auto rtz = [&](const IR::F32& value) -> IR::F32 {
+        const IR::F32 clamped = ir.FPClamp(value, ir.Imm32(-65504.f), ir.Imm32(65504.f));
+        return IR::F32{ir.Select(ir.FPIsInf(value), value, clamped)};
+    };
+    const IR::Value vec_f32 = ir.CompositeConstruct(rtz(GetSrc<IR::F32>(inst.src[0])),
+                                                    rtz(GetSrc<IR::F32>(inst.src[1])));
     SetDst(inst.dst[0], ir.Pack2x16(AmdGpu::NumberFormat::Float, vec_f32));
 }
 
