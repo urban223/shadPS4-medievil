@@ -187,8 +187,21 @@ int main(int argc, char* argv[]) {
             gamePath = gameArgs.front();
             gameArgs.erase(gameArgs.begin());
         } else {
-            LOG_ERROR(Debug, "Please provide a game path or ID.");
-            return 1;
+            // MediEvil PC port: find the extracted game next to the executable.
+            const auto exe_dir = std::filesystem::path(argv[0]).parent_path();
+            for (const auto& candidate :
+                 {exe_dir / "game" / "eboot.bin", exe_dir / "game" / "uroot" / "eboot.bin",
+                  exe_dir / ".." / "game" / "uroot" / "eboot.bin"}) {
+                if (std::filesystem::exists(candidate)) {
+                    gamePath = candidate.lexically_normal().string();
+                    break;
+                }
+            }
+            if (!gamePath.has_value()) {
+                LOG_ERROR(Debug, "MediEvil game files not found: expected game\eboot.bin next "
+                                 "to the executable.");
+                return 1;
+            }
         }
     }
 

@@ -411,8 +411,8 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(AudioSettings, audio_backend, sdl_mic_device,
 // GPU settings
 // -------------------------------
 struct GPUSettings {
-    Setting<u32> window_width{1280};
-    Setting<u32> window_height{720};
+    Setting<u32> window_width{1920};
+    Setting<u32> window_height{1080};
     Setting<u32> internal_screen_width{1280};
     Setting<u32> internal_screen_height{720};
     Setting<bool> null_gpu{false};
@@ -423,8 +423,8 @@ struct GPUSettings {
     Setting<bool> dump_shaders{false};
     Setting<bool> patch_shaders{false};
     Setting<u32> vblank_frequency{60};
-    Setting<bool> full_screen{false};
-    Setting<std::string> full_screen_mode{"Windowed"};
+    Setting<bool> full_screen{true}; // MediEvil port: borderless fullscreen by default
+    Setting<std::string> full_screen_mode{"Borderless"};
     Setting<std::string> present_mode{"Mailbox"};
     Setting<bool> hdr_allowed{false};
     Setting<bool> fsr_enabled{false};
@@ -480,7 +480,7 @@ struct VulkanSettings {
     Setting<bool> vkcrash_diagnostic_enabled{false};
     Setting<bool> vkhost_markers{false};
     Setting<bool> vkguest_markers{false};
-    Setting<bool> pipeline_cache_enabled{false};
+    Setting<bool> pipeline_cache_enabled{true}; // MediEvil port: avoid shader-compile stutter
     Setting<bool> pipeline_cache_archived{false};
 
     std::vector<OverrideItem> GetOverrideableFields() const {

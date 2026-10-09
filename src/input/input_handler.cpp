@@ -55,42 +55,8 @@ constexpr std::string_view GetDefaultGlobalConfig() {
 constexpr std::string_view GetDefaultInputConfig() {
     return R"(#Feeling lost? Check out the Help section!
 
-# Keyboard bindings
-
-triangle = kp8
-circle = kp6
-cross = kp2
-square = kp4
-# Alternatives for users without a keypad
-triangle = c
-circle = b
-cross = n
-square = v
-
-l1 = q
-r1 = u
-l2 = e
-r2 = o
-l3 = x
-r3 = m
-
-options = enter
-touchpad_center = space
-
-pad_up = up
-pad_down = down
-pad_left = left
-pad_right = right
-
-axis_left_x_minus = a
-axis_left_x_plus = d
-axis_left_y_minus = w
-axis_left_y_plus = s
-
-axis_right_x_minus = j
-axis_right_x_plus = l
-axis_right_y_minus = i
-axis_right_y_plus = k
+# MediEvil PC port: gamepad-only for now (keyboard/mouse bindings will come later).
+# Emulator hotkeys (F11 fullscreen etc.) are configured in global.ini.
 
 # Controller bindings
 

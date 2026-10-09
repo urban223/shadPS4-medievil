@@ -692,9 +692,14 @@ void Runtime::AccessBuffer(const VideoCore::Buffer* handle, u64 offset, u64 size
                            vk::PipelineStageFlags2 src_stage, vk::AccessFlags2 src_access) {
     MakeCurrent(handle);
 
+    // MediEvil port: UE4 streams per-draw constants through big ring buffers, so thousands of
+    // small disjoint ranges piled up between barriers and every insert shifted the vector
+    // (O(n^2) per frame). Widening the range by a little slack lets neighbouring sub-allocations
+    // coalesce; it is a conservative superset, so at worst an extra barrier is recorded.
+    constexpr u64 Slack = 256;
     const Interval range = {
-        .start = offset,
-        .end = offset + size,
+        .start = offset > Slack ? offset - Slack : 0,
+        .end = offset + size + Slack,
     };
 
     constexpr static vk::AccessFlags2 READ_MASK =
@@ -709,11 +714,21 @@ void Runtime::AccessBuffer(const VideoCore::Buffer* handle, u64 offset, u64 size
         vk::AccessFlagBits2::eDepthStencilAttachmentWrite | vk::AccessFlagBits2::eTransferWrite |
         vk::AccessFlagBits2::eMemoryWrite | vk::AccessFlagBits2::eTransformFeedbackWriteEXT;
 
+    constexpr std::size_t MaxIntervals = 128;
+    const auto add = [&range](BufferBarriers::AccessList& list) {
+        list.Add(range);
+        if (list.Size() > MaxIntervals) {
+            // Safety valve: collapse into one bounding range (still a conservative superset).
+            const Interval bounds{list.begin()->start, std::prev(list.end())->end};
+            list.Clear();
+            list.Add(bounds);
+        }
+    };
     if (src_access & WRITE_MASK) {
-        resource->write_ranges.Add(range);
+        add(resource->write_ranges);
     }
     if (src_access & READ_MASK) {
-        resource->read_ranges.Add(range);
+        add(resource->read_ranges);
     }
 
     memory_barrier.srcStageMask |= src_stage;
