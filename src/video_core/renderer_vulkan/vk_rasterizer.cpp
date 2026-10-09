@@ -206,6 +206,20 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
         return;
     }
     const auto state = BeginRendering(pipeline);
+    if (MediEvil::FrameTrace::g_enabled) {
+        MediEvil::FrameTrace::DrawRecord rec{};
+        rec.ps_hash = pipeline->GetGraphicsKey().stage_hashes[static_cast<u32>(
+            Shader::SwStage::Fragment)];
+        for (const auto id : bound_images) {
+            if (rec.num_images == 8) {
+                break;
+            }
+            rec.image_index[rec.num_images] = id.index;
+            rec.image_addr[rec.num_images] = texture_cache.GetImage(id).info.guest_address;
+            ++rec.num_images;
+        }
+        MediEvil::FrameTrace::RecordDraw(rec);
+    }
 
     BindVertexBuffers(pipeline);
     if (is_indexed) {
@@ -320,6 +334,23 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
     ResetBindings(false);
 }
 
+void Rasterizer::RecordTraceDispatch(u64 cs_hash) {
+    if (!MediEvil::FrameTrace::g_enabled) {
+        return;
+    }
+    MediEvil::FrameTrace::DrawRecord rec{};
+    rec.ps_hash = cs_hash | (1ULL << 63);
+    for (const auto id : bound_images) {
+        if (rec.num_images == 8) {
+            break;
+        }
+        rec.image_index[rec.num_images] = id.index;
+        rec.image_addr[rec.num_images] = texture_cache.GetImage(id).info.guest_address;
+        ++rec.num_images;
+    }
+    MediEvil::FrameTrace::RecordDraw(rec);
+}
+
 void Rasterizer::DispatchDirect() {
     RENDERER_TRACE;
     scheduler.DebugFullBarrier();
@@ -347,6 +378,7 @@ void Rasterizer::DispatchDirect() {
 
     scheduler.EndRendering();
     pipeline->BindResources(set_writes, push_data);
+    RecordTraceDispatch(cs.pgm_hash);
 
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());

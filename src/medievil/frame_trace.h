@@ -36,4 +36,14 @@ inline void Inc(Counter c) {
 
 void OnFlip(u32 flip_number, u32 draws, u32 dispatches);
 
+// Per-draw resource record: the last draws of every frame are written to medievil_draws.txt
+// so a broken frame can be compared with good ones (which images each pass read and wrote).
+struct DrawRecord {
+    u64 ps_hash;
+    u32 num_images;
+    u32 image_index[8];
+    u64 image_addr[8];
+};
+void RecordDraw(const DrawRecord& rec);
+
 } // namespace MediEvil::FrameTrace

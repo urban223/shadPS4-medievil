@@ -711,6 +711,8 @@ void Translator::IMAGE_SAMPLE(const GcnInst& inst) {
         // MediEvil port: filtered texel fetches never yield NaN downstream. A stray NaN texel
         // was smeared over the whole screen by UE4's bloom blur chain (black frames).
         value = IR::F32{ir.Select(ir.FPIsNan(value), ir.Imm32(0.0f), value)};
+        value = IR::F32{ir.Select(ir.FPIsInf(value),
+                                  ir.FPClamp(value, ir.Imm32(-65504.f), ir.Imm32(65504.f)), value)};
         ir.SetVectorReg(dest_reg++, value);
     }
 }
@@ -733,6 +735,8 @@ void Translator::IMAGE_GATHER(const GcnInst& inst) {
     for (u32 i = 0; i < 4; i++) {
         IR::F32 value = IR::F32{ir.CompositeExtract(texel, i)};
         value = IR::F32{ir.Select(ir.FPIsNan(value), ir.Imm32(0.0f), value)};
+        value = IR::F32{ir.Select(ir.FPIsInf(value),
+                                  ir.FPClamp(value, ir.Imm32(-65504.f), ir.Imm32(65504.f)), value)};
         ir.SetVectorReg(dest_reg++, value);
     }
 }

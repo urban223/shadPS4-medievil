@@ -115,6 +115,9 @@ void Translator::ExportRenderTarget(const GcnInst& inst) {
         auto converted = ApplyWriteNumberConversion(ir, swizzled_comp, color_buffer.num_conversion);
         if (float_target) {
             converted = IR::F32{ir.Select(ir.FPIsNan(converted), ir.Imm32(0.f), converted)};
+            converted = IR::F32{ir.Select(
+                ir.FPIsInf(converted),
+                ir.FPClamp(converted, ir.Imm32(-65504.f), ir.Imm32(65504.f)), converted)};
         }
         if (needs_unorm_fixup) {
             // FIXME: Fix-up for GPUs where float-to-unorm rounding is off from expected.

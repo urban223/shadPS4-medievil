@@ -836,6 +836,11 @@ void TextureCache::RefreshImage(Image& image) {
     const u32 num_mips = image.info.resources.levels;
     const bool is_gpu_modified = True(image.flags & ImageFlagBits::GpuModified);
     const bool is_gpu_dirty = True(image.flags & ImageFlagBits::GpuDirty);
+    if (MediEvil::FrameTrace::g_enabled && (is_gpu_modified || image.binding.is_target)) {
+        LOG_WARNING(Debug, "frametrace refresh {:x} {}x{} flags {:x} gpu_modified {} gpu_dirty {}",
+                    image.info.guest_address, image.info.size.width, image.info.size.height,
+                    static_cast<u32>(image.flags), is_gpu_modified, is_gpu_dirty);
+    }
 
     SmallVector<vk::BufferImageCopy, 14> image_copies;
     for (u32 m = 0; m < num_mips; m++) {

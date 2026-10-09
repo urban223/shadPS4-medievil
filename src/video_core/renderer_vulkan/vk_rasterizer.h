@@ -167,6 +167,7 @@ private:
         vk::AccessFlags2 src_access;
     };
     std::vector<BoundBuffer> bound_buffers;
+    void RecordTraceDispatch(u64 cs_hash);
     std::vector<VideoCore::ImageId> bound_images;
 
     u32 set_write_index{};
