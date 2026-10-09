@@ -46,4 +46,13 @@ struct DrawRecord {
 };
 void RecordDraw(const DrawRecord& rec);
 
+// GPU breadcrumbs (MEDIEVIL_CHECKPOINTS=1, NVIDIA VK_NV_device_diagnostic_checkpoints): every
+// draw/dispatch gets a sequence number whose shader hash is remembered, so the last breadcrumb the
+// GPU reached can be named after a device loss.
+extern const bool g_checkpoints;
+u32 CheckpointTag(u64 shader_hash, bool compute);
+void DescribeCheckpoint(u32 tag, u64& shader_hash, bool& compute, u32& frame);
+void SetCheckpointNote(u32 tag, const char* note);
+const char* GetCheckpointNote(u32 tag);
+
 } // namespace MediEvil::FrameTrace

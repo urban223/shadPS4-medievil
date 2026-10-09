@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2025 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "medievil/gpu_checkpoint.h"
 #include "common/div_ceil.h"
 #include "video_core/buffer_cache/buffer_cache.h"
 #include "video_core/buffer_cache/fault_manager.h"
@@ -153,6 +154,7 @@ void FaultManager::ProcessFaultBuffer() {
     // 1 bit per page, 32 pages per workgroup
     const u32 num_threads = sparse_num_pages / 32;
     const u32 num_workgroups = Common::DivCeil(num_threads, 64u);
+    MediEvil::FrameTrace::MarkCheckpoint(cmdbuf, "fault buffer process");
     cmdbuf.dispatch(num_workgroups, 1, 1);
 
     cmdbuf.pipelineBarrier2(vk::DependencyInfo{

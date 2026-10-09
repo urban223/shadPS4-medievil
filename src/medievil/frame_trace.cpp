@@ -17,6 +17,50 @@ const bool g_enabled = [] {
 
 std::array<std::atomic<u32>, Counter::Count> g_counters{};
 
+const bool g_checkpoints = [] {
+    const char* env = std::getenv("MEDIEVIL_CHECKPOINTS");
+    return env && *env == '1';
+}();
+
+namespace {
+struct CheckpointEntry {
+    u64 hash;
+    u32 frame;
+    bool compute;
+    char note[160];
+};
+constexpr u32 CheckpointRing = 1u << 16;
+std::array<CheckpointEntry, CheckpointRing> g_checkpoint_ring{};
+std::atomic<u32> g_checkpoint_seq{1};
+std::atomic<u32> g_checkpoint_frame{0};
+} // namespace
+
+u32 CheckpointTag(u64 shader_hash, bool compute) {
+    const u32 tag = g_checkpoint_seq.fetch_add(1, std::memory_order_relaxed);
+    auto& e = g_checkpoint_ring[tag % CheckpointRing];
+    e.hash = shader_hash;
+    e.frame = g_checkpoint_frame.load();
+    e.compute = compute;
+    e.note[0] = 0;
+    return tag;
+}
+
+void SetCheckpointNote(u32 tag, const char* note) {
+    auto& e = g_checkpoint_ring[tag % CheckpointRing];
+    std::snprintf(e.note, sizeof(e.note), "%s", note);
+}
+
+const char* GetCheckpointNote(u32 tag) {
+    return g_checkpoint_ring[tag % CheckpointRing].note;
+}
+
+void DescribeCheckpoint(u32 tag, u64& shader_hash, bool& compute, u32& frame) {
+    const auto& e = g_checkpoint_ring[tag % CheckpointRing];
+    shader_hash = e.hash;
+    compute = e.compute;
+    frame = e.frame;
+}
+
 namespace {
 constexpr u32 RingSize = 96;
 std::mutex g_ring_mutex;
@@ -55,6 +99,7 @@ void RecordDraw(const DrawRecord& rec) {
 }
 
 void OnFlip(u32 flip_number, u32 draws, u32 dispatches) {
+    g_checkpoint_frame.store(flip_number, std::memory_order_relaxed);
     if (!g_enabled) {
         return;
     }

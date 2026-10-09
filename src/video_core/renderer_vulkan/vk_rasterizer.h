@@ -169,6 +169,7 @@ private:
     };
     std::vector<BoundBuffer> bound_buffers;
     void RecordTraceDispatch(u64 cs_hash);
+    u32 SetDrawCheckpoint(const GraphicsPipeline* pipeline, bool indirect);
     void ProbeRenderTarget(u64 ps_hash);
     void ResolveProbes();
     struct Probe {

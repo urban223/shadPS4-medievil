@@ -21,6 +21,13 @@ namespace Vulkan {
 
 class Instance {
 public:
+    /// Logs VK_EXT_device_fault details after a device loss (no-op if unsupported).
+    void LogDeviceFault() const;
+
+    bool HasDiagnosticCheckpoints() const {
+        return diagnostic_checkpoints;
+    }
+
     explicit Instance(bool validation = false, bool crash_diagnostic = false);
     explicit Instance(Frontend::WindowSDL& window, s32 physical_device_index,
                       bool enable_validation = false, bool enable_crash_diagnostic = false);
@@ -537,6 +544,8 @@ private:
     bool image_2d_view_of_3d{};
     bool image_view_min_lod{};
     bool shader_clock{};
+    bool device_fault{};
+    bool diagnostic_checkpoints{};
     bool supports_memory_budget{};
     bool supports_block_texel_view{};
     u64 total_memory_budget{};

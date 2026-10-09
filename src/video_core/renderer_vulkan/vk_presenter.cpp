@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "common/debug.h"
+#include "medievil/frame_trace.h"
 #include "common/elf_info.h"
 #include "common/io_file.h"
 #include "common/path_util.h"
@@ -45,6 +46,19 @@
 #include <imgui.h>
 #include <stb_image_write.h>
 #include <vk_mem_alloc.h>
+
+
+namespace {
+void PresenterCheckpoint(const Vulkan::Instance& instance, vk::CommandBuffer cmdbuf,
+                         const char* what) {
+    if (!instance.HasDiagnosticCheckpoints()) {
+        return;
+    }
+    const u32 tag = MediEvil::FrameTrace::CheckpointTag(0xFFFF0000'00000000ULL, false);
+    MediEvil::FrameTrace::SetCheckpointNote(tag, what);
+    cmdbuf.setCheckpointNV(reinterpret_cast<void*>(uintptr_t(tag)));
+}
+} // namespace
 
 namespace Vulkan {
 
@@ -607,6 +621,9 @@ Frame* Presenter::PrepareLastFrame() {
         if (result == vk::Result::eTimeout) {
             continue;
         }
+        if (result == vk::Result::eErrorDeviceLost) {
+            instance.LogDeviceFault();
+        }
         ASSERT_MSG(result != vk::Result::eErrorDeviceLost,
                    "Device lost during waiting for a frame");
     }
@@ -740,14 +757,17 @@ Frame* Presenter::PrepareFrame(const Libraries::VideoOut::BufferAttributeGroup& 
                     vk::PipelineStageFlagBits2::eFragmentShader, vk::AccessFlagBits2::eShaderRead);
     runtime.FlushBarriers();
 
+    PresenterCheckpoint(instance, cmdbuf, "presenter: fsr/rcas");
     image_view = fsr_pass.Render(cmdbuf, image_view, image_size, {frame->width, frame->height},
                                  fsr_settings, frame->is_hdr);
+    PresenterCheckpoint(instance, cmdbuf, "presenter: post-process");
 
     // Vulkan has no sRGB variant of the 10-bit format, so an A2R10G10B10Srgb buffer reaches
     // the post process pass still sRGB encoded and has to be decoded there instead.
     pp_settings.srgb_input =
         attribute.attrib.pixel_format == Libraries::VideoOut::PixelFormat::A2R10G10B10Srgb;
     pp_pass.Render(cmdbuf, image_view, image_size, *frame, pp_settings);
+    PresenterCheckpoint(instance, cmdbuf, "presenter: after post-process");
 
     DebugState.game_resolution = {image_size.width, image_size.height};
     DebugState.output_resolution = {frame->width, frame->height};
@@ -989,7 +1009,9 @@ void Presenter::Present(Frame* frame, bool is_reusing_frame, bool is_game_frame)
             ImGui::PopStyleVar(3);
             ImGui::PopStyleColor();
         }
+        PresenterCheckpoint(instance, cmdbuf, "presenter: imgui");
         ImGui::Core::Render(cmdbuf, swapchain_image_view, swapchain.GetExtent());
+        PresenterCheckpoint(instance, cmdbuf, "presenter: after imgui");
 
         if (capture_with_overlays_count > 0) {
             auto& readback = pending_screenshot.emplace(
@@ -1110,6 +1132,9 @@ Frame* Presenter::GetRenderFrame() {
 
     // Wait for the presentation to be finished so all frame resources are free
     while (wait() != vk::Result::eSuccess) {
+        if (result == vk::Result::eErrorDeviceLost) {
+            instance.LogDeviceFault();
+        }
         ASSERT_MSG(result != vk::Result::eErrorDeviceLost,
                    "Device lost during waiting for a frame");
         // Retry if the waiting times out

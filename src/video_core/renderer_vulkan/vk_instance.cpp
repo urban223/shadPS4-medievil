@@ -5,7 +5,9 @@
 #include <fmt/format.h>
 #include <fmt/ranges.h>
 
+#include "medievil/gpu_checkpoint.h"
 #include "common/assert.h"
+#include "medievil/frame_trace.h"
 #include "common/debug.h"
 #include "common/types.h"
 #include "imgui/renderer/imgui_core.h"
@@ -351,6 +353,10 @@ bool Instance::CreateDevice() {
                  image_2d_view_of_3d_features.sampler2DViewOf3D);
     }
     image_view_min_lod = add_extension(VK_EXT_IMAGE_VIEW_MIN_LOD_EXTENSION_NAME);
+    device_fault = add_extension(VK_EXT_DEVICE_FAULT_EXTENSION_NAME);
+    diagnostic_checkpoints = MediEvil::FrameTrace::g_checkpoints &&
+                             add_extension(VK_NV_DEVICE_DIAGNOSTIC_CHECKPOINTS_EXTENSION_NAME);
+    MediEvil::FrameTrace::g_checkpoints_active = diagnostic_checkpoints;
     supports_memory_budget = add_extension(VK_EXT_MEMORY_BUDGET_EXTENSION_NAME);
     shader_clock = add_extension(VK_KHR_SHADER_CLOCK_EXTENSION_NAME);
     if (shader_clock) {
@@ -534,7 +540,14 @@ bool Instance::CreateDevice() {
         vk::PhysicalDeviceShaderClockFeaturesKHR{
             .shaderSubgroupClock = shader_clock_features.shaderSubgroupClock,
         },
+        vk::PhysicalDeviceFaultFeaturesEXT{
+            .deviceFault = true,
+            .deviceFaultVendorBinary = false,
+        },
     };
+    if (!device_fault) {
+        device_chain.unlink<vk::PhysicalDeviceFaultFeaturesEXT>();
+    }
 
     if (!custom_border_color) {
         device_chain.unlink<vk::PhysicalDeviceCustomBorderColorFeaturesEXT>();
@@ -839,4 +852,62 @@ vk::Format Instance::GetSupportedFormat(const vk::Format format,
     return format;
 }
 
+} // namespace Vulkan
+
+namespace Vulkan {
+void Instance::LogDeviceFault() const {
+    if (diagnostic_checkpoints) {
+        const auto checkpoints = graphics_queue.getCheckpointDataNV();
+        for (const auto& cp : checkpoints) {
+            const u32 tag = static_cast<u32>(reinterpret_cast<uintptr_t>(cp.pCheckpointMarker));
+            u64 hash{};
+            bool compute{};
+            u32 frame{};
+            MediEvil::FrameTrace::DescribeCheckpoint(tag, hash, compute, frame);
+            LOG_CRITICAL(Render_Vulkan, "  checkpoint stage {} tag {} {} shader {:#018x} frame {} {}",
+                         vk::to_string(cp.stage), tag, compute ? "dispatch" : "draw", hash, frame,
+                         MediEvil::FrameTrace::GetCheckpointNote(tag));
+        }
+        if (!checkpoints.empty()) {
+            const u32 last = static_cast<u32>(
+                reinterpret_cast<uintptr_t>(checkpoints.front().pCheckpointMarker));
+            for (u32 next = last + 1; next <= last + 12; ++next) {
+                u64 hash{};
+                bool compute{};
+                u32 frame{};
+                MediEvil::FrameTrace::DescribeCheckpoint(next, hash, compute, frame);
+                LOG_CRITICAL(Render_Vulkan, "  after: tag {} {} shader {:#018x} frame {} {}", next,
+                             compute ? "dispatch" : "draw", hash, frame,
+                             MediEvil::FrameTrace::GetCheckpointNote(next));
+            }
+        }
+    }
+    if (!device_fault) {
+        LOG_CRITICAL(Render_Vulkan, "Device lost (VK_EXT_device_fault unavailable)");
+        return;
+    }
+    vk::DeviceFaultCountsEXT counts{};
+    if (GetDevice().getFaultInfoEXT(&counts, nullptr) != vk::Result::eSuccess &&
+        counts.addressInfoCount == 0 && counts.vendorInfoCount == 0) {
+        LOG_CRITICAL(Render_Vulkan, "Device lost: no fault info");
+        return;
+    }
+    std::vector<vk::DeviceFaultAddressInfoEXT> addresses(counts.addressInfoCount);
+    std::vector<vk::DeviceFaultVendorInfoEXT> vendor(counts.vendorInfoCount);
+    counts.vendorBinarySize = 0;
+    vk::DeviceFaultInfoEXT info{};
+    info.pAddressInfos = addresses.data();
+    info.pVendorInfos = vendor.data();
+    const auto result = GetDevice().getFaultInfoEXT(&counts, &info);
+    LOG_CRITICAL(Render_Vulkan, "Device lost: fault info result {} description '{}'",
+                 vk::to_string(result), info.description.data());
+    for (const auto& a : addresses) {
+        LOG_CRITICAL(Render_Vulkan, "  fault address type {} address {:#x} precision {:#x}",
+                     vk::to_string(a.addressType), a.reportedAddress, a.addressPrecision);
+    }
+    for (const auto& v : vendor) {
+        LOG_CRITICAL(Render_Vulkan, "  vendor fault '{}' code {:#x} data {:#x}", v.description.data(),
+                     v.vendorFaultCode, v.vendorFaultData);
+    }
+}
 } // namespace Vulkan

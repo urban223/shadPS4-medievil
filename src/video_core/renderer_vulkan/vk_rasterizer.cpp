@@ -255,6 +255,9 @@ void Rasterizer::Draw(bool is_indexed, u32 index_offset) {
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->Handle());
 
+    if (instance.HasDiagnosticCheckpoints()) {
+        SetDrawCheckpoint(pipeline, false);
+    }
     if (is_indexed) {
         cmdbuf.drawIndexed(regs.num_indices, regs.num_instances.NumInstances(), 0,
                            s32(vertex_offset), instance_offset);
@@ -326,6 +329,18 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
 
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline->Handle());
+    if (instance.HasDiagnosticCheckpoints()) {
+        const u32 tag = SetDrawCheckpoint(pipeline, true);
+        const u32* args = std::bit_cast<const u32*>(arg_address + offset);
+        const u32 count = count_address ? *std::bit_cast<const u32*>(count_address) : max_count;
+        const auto note = fmt::format(
+            "args {:x} stride {} max {} cnt {:x}={} gpu_mod {} guest {} {} {} {} {}",
+            arg_address + offset, stride, max_count, count_address, count,
+            buffer_cache.IsRegionGpuModified(arg_address + offset, size), args[0], args[1],
+            args[2], args[3], stride > 16 ? args[4] : 0);
+        MediEvil::FrameTrace::SetCheckpointNote(
+            tag, (std::string{MediEvil::FrameTrace::GetCheckpointNote(tag)} + " " + note).c_str());
+    }
 
     if (is_indexed) {
         ASSERT(sizeof(VkDrawIndexedIndirectCommand) == stride);
@@ -438,6 +453,33 @@ void Rasterizer::ResolveProbes() {
     }
 }
 
+u32 Rasterizer::SetDrawCheckpoint(const GraphicsPipeline* pipeline, bool indirect) {
+    const auto& hashes = pipeline->GetGraphicsKey().stage_hashes;
+    u64 hash = hashes[static_cast<u32>(Shader::SwStage::Fragment)];
+    if (hash == 0) {
+        // Depth-only pass: name it after the vertex shader (bit 62 marks it).
+        hash = hashes[static_cast<u32>(Shader::SwStage::Vertex)] | (1ULL << 62);
+    }
+    if (indirect) {
+        hash |= 1ULL << 63;
+    }
+    const u32 tag = MediEvil::FrameTrace::CheckpointTag(hash, false);
+    scheduler.CommandBuffer().setCheckpointNV(reinterpret_cast<void*>(uintptr_t(tag)));
+    const auto pgm = [&](Shader::SwStage stage) -> u64 {
+        return hashes[static_cast<u32>(stage)] ? pipeline->GetStage(stage).pgm_hash : 0;
+    };
+    const auto& regs = liverpool->regs;
+    const auto note = fmt::format(
+        "{} vs {:016x} ps {:016x} gs {:016x} ls {:016x} n {} inst {} prim {} idx {:x}",
+        indirect ? "INDIRECT" : "direct", pgm(Shader::SwStage::Vertex),
+        pgm(Shader::SwStage::Fragment), pgm(Shader::SwStage::Geometry),
+        pgm(Shader::SwStage::TessellationControl), regs.num_indices,
+        regs.num_instances.NumInstances(), static_cast<u32>(regs.primitive_type),
+        regs.index_base_address.Address());
+    MediEvil::FrameTrace::SetCheckpointNote(tag, note.c_str());
+    return tag;
+}
+
 void Rasterizer::RecordTraceDispatch(u64 cs_hash) {
     if (!MediEvil::FrameTrace::g_enabled) {
         return;
@@ -486,6 +528,10 @@ void Rasterizer::DispatchDirect() {
 
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
+    if (instance.HasDiagnosticCheckpoints()) {
+        cmdbuf.setCheckpointNV(reinterpret_cast<void*>(
+            uintptr_t(MediEvil::FrameTrace::CheckpointTag(cs.pgm_hash, true))));
+    }
     cmdbuf.dispatch(cs_program.dim_x, cs_program.dim_y, cs_program.dim_z);
     DebugState.IncDispatch();
 
@@ -521,6 +567,10 @@ void Rasterizer::DispatchIndirect(VAddr address, u32 offset, u32 size) {
 
     const auto cmdbuf = scheduler.CommandBuffer();
     cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, pipeline->Handle());
+    if (instance.HasDiagnosticCheckpoints()) {
+        cmdbuf.setCheckpointNV(reinterpret_cast<void*>(
+            uintptr_t(MediEvil::FrameTrace::CheckpointTag(pipeline->GetStage(Shader::SwStage::Compute).pgm_hash, true))));
+    }
     cmdbuf.dispatchIndirect(buffer->Handle(), base);
     DebugState.IncDispatch();
 
