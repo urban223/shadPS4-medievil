@@ -1,6 +1,7 @@
 // SPDX-FileCopyrightText: Copyright 2025 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <chrono>
 #include "common/assert.h"
 #include "common/debug.h"
 #include "common/thread.h"
@@ -133,7 +134,21 @@ void Scheduler::Wait(u64 tick) {
 
 void Scheduler::PopPendingOperations() {
     std::unique_lock lk(pending_ops_mutex);
-    work_semaphore.Refresh();
+    // MediEvil port: this runs for every draw, and Refresh() is a driver round-trip
+    // (vkGetSemaphoreCounterValue -> kernel escape). Skip it when nothing is pending and
+    // otherwise poll at most every 250us (Submit() refreshes the semaphore itself).
+    if (pending_ops.empty()) {
+        return;
+    }
+    if (!work_semaphore.IsFree(pending_ops.front().gpu_tick)) {
+        static thread_local auto last_refresh = std::chrono::steady_clock::time_point{};
+        const auto now = std::chrono::steady_clock::now();
+        if (now - last_refresh < std::chrono::microseconds(250)) {
+            return;
+        }
+        last_refresh = now;
+        work_semaphore.Refresh();
+    }
     while (!pending_ops.empty() && work_semaphore.IsFree(pending_ops.front().gpu_tick)) {
         pending_ops.front().callback();
         pending_ops.pop();

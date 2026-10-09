@@ -268,7 +268,7 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(NetworkSettings, connected_to_network, shad_n
 struct LogSettings {
     Setting<bool> append{false}; // specific
     Setting<bool> enable{true};  // specific
-    Setting<std::string> filter{""};
+    Setting<std::string> filter{"*:warning"}; // MediEvil port: logging costs ~10% fps
     Setting<std::string> flush_level{""};
     Setting<u32> max_skip_duration{5'000};
     Setting<bool> separate{false}; // specific

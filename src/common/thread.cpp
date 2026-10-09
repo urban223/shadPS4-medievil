@@ -114,13 +114,35 @@ bool AccurateSleep(const std::chrono::nanoseconds duration, std::chrono::nanosec
                    const bool interruptible) {
     const auto begin_sleep = std::chrono::high_resolution_clock::now();
 
-    LARGE_INTEGER interval{
-        .QuadPart = -1 * (duration.count() / 100u),
+    // MediEvil port: guest render loops poll with tiny usleep()s, and creating/closing a kernel
+    // timer per call cost ~30% of UE4's RenderThread. Keep one high-resolution timer per thread.
+    if (duration.count() <= 0) {
+        SwitchToThread();
+        if (remaining) {
+            *remaining = std::chrono::nanoseconds(0);
+        }
+        return true;
+    }
+    struct ThreadTimer {
+        HANDLE handle;
+        ThreadTimer() {
+            handle = ::CreateWaitableTimerExW(NULL, NULL, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
+                                              TIMER_ALL_ACCESS);
+            if (!handle) { // pre-1803 Windows: fall back to a regular timer
+                handle = ::CreateWaitableTimerExW(NULL, NULL, 0, TIMER_ALL_ACCESS);
+            }
+        }
+        ~ThreadTimer() {
+            ::CloseHandle(handle);
+        }
     };
-    HANDLE timer = ::CreateWaitableTimer(NULL, TRUE, NULL);
-    SetWaitableTimer(timer, &interval, 0, NULL, NULL, 0);
-    const auto ret = WaitForSingleObjectEx(timer, INFINITE, interruptible);
-    ::CloseHandle(timer);
+    static thread_local ThreadTimer timer;
+
+    LARGE_INTEGER interval{
+        .QuadPart = -1 * std::max<s64>(duration.count() / 100, 1),
+    };
+    SetWaitableTimer(timer.handle, &interval, 0, NULL, NULL, 0);
+    const auto ret = WaitForSingleObjectEx(timer.handle, INFINITE, interruptible);
 
     if (remaining) {
         const auto end_sleep = std::chrono::high_resolution_clock::now();

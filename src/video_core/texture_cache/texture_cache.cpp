@@ -496,6 +496,24 @@ std::tuple<ImageId, int, int> TextureCache::ResolveOverlap(const ImageInfo& imag
 }
 
 ImageId TextureCache::ExpandImage(const ImageInfo& info, ImageId image_id) {
+    {
+        // MediEvil port diagnostics: which images keep getting re-created.
+        static u32 expand_logs = 0;
+        const auto& src = slot_images[image_id].info;
+        if (expand_logs < 40) {
+            ++expand_logs;
+            LOG_WARNING(Render_Vulkan,
+                        "ExpandImage {:#x}: {}x{}x{} {} lv{} ly{} type{} block{} -> {}x{}x{} {} "
+                        "lv{} ly{} type{} block{} (tick {})",
+                        info.guest_address, src.size.width, src.size.height, src.size.depth,
+                        vk::to_string(src.pixel_format), src.resources.levels,
+                        src.resources.layers, int(src.type), bool(src.props.is_block),
+                        info.size.width, info.size.height, info.size.depth,
+                        vk::to_string(info.pixel_format), info.resources.levels,
+                        info.resources.layers, int(info.type), bool(info.props.is_block),
+                        scheduler.CurrentTick());
+        }
+    }
     const auto new_image_id = slot_images.Insert(instance, runtime, slot_image_views, info);
     RegisterImage(new_image_id);
 
